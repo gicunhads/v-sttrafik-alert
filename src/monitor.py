@@ -7,7 +7,9 @@ from database import (
 )
 from trafiklab import get_departures
 from departures import find_departure, should_notify
-from notifications import send_notification
+from push_notifications import (
+    send_push_to_user
+)
 
 
 def should_check_now(trip, minutes_before=30):
@@ -98,10 +100,14 @@ def check_saved_trips():
             print("Alert already sent.")
             continue
 
-        send_notification(
-            title=f"Trip Alert: {trip.line} → {trip.direction}",
-            message=reason_text
-        )
+        send_push_to_user(
+    user_id=trip.user_id,
+    title=(
+        f"Trip Alert: "
+        f"{trip.line} → {trip.direction}"
+    ),
+    message=reason_text
+)
 
         # Remember the notification in SQLite
         record_alert(

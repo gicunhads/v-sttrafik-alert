@@ -11,3 +11,4 @@ class SavedTrip:
     days: list[str]
     delay_threshold: int = 5
     id: int | None = None
+    user_id: int | None = None

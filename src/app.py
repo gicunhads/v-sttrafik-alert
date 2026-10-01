@@ -1,12 +1,28 @@
 from datetime import datetime, timedelta
-
+import os
 from flask import (
     Flask,
     render_template,
     request,
-    redirect
+    redirect,
+    session,
+    jsonify,
+    send_from_directory
 )
-
+from werkzeug.security import (
+    generate_password_hash,
+    check_password_hash
+)
+from database import (
+    create_tables,
+    insert_trip,
+    get_saved_trips,
+    delete_trip,
+    create_user,
+    get_user_by_email,
+    get_user_by_id
+)
+from functools import wraps
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from trafiklab import search_stop, get_departures
@@ -17,11 +33,35 @@ from database import (
     create_tables,
     insert_trip,
     get_saved_trips,
-    delete_trip
+    delete_trip,
+    save_push_subscription
 )
 
+from push_notifications import send_push_to_user
 
 app = Flask(__name__)
+app.secret_key = os.getenv(
+    "FLASK_SECRET_KEY"
+)
+
+if not app.secret_key:
+    raise ValueError(
+        "FLASK_SECRET_KEY is missing from .env"
+    )
+
+
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+
+        if "user_id" not in session:
+            return redirect("/login")
+
+        return view(*args, **kwargs)
+
+    return wrapped_view
 
 
 def get_next_selected_date(days):
@@ -42,6 +82,7 @@ def get_next_selected_date(days):
 
 
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     stops = []
     search = ""
@@ -97,6 +138,7 @@ def select_stop(stop_id):
 
 
 @app.route("/trip/new")
+@login_required
 def new_trip():
     stop_id = request.args.get("stop_id")
     stop_name = request.args.get("stop_name")
@@ -223,6 +265,7 @@ def find_trip_departures():
 
 
 @app.route("/trip/save", methods=["POST"])
+@login_required
 def save_trip():
 
     stop_id = request.form["stop_id"]
@@ -239,14 +282,15 @@ def save_trip():
     )
 
     saved_trip = SavedTrip(
-        stop_id=stop_id,
-        stop_name=stop_name,
-        line=line,
-        direction=direction,
-        target_time=target_time,
-        days=days,
-        delay_threshold=delay_threshold
-    )
+    user_id=session["user_id"],
+    stop_id=stop_id,
+    stop_name=stop_name,
+    line=line,
+    direction=direction,
+    target_time=target_time,
+    days=days,
+    delay_threshold=delay_threshold
+)
 
     insert_trip(saved_trip)
 
@@ -260,9 +304,12 @@ def save_trip():
 
 
 @app.route("/trips")
+@login_required
 def trips():
 
-    saved_trips = get_saved_trips()
+    saved_trips = get_saved_trips(
+    session["user_id"]
+)
 
     return render_template(
         "trips.html",
@@ -274,14 +321,177 @@ def trips():
     "/trip/<int:trip_id>/delete",
     methods=["POST"]
 )
+@login_required
 def remove_trip(trip_id):
 
-    delete_trip(trip_id)
+    delete_trip(
+        trip_id,
+        session["user_id"]
+    )
 
     return redirect("/trips")
-
-
 create_tables()
+
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+
+    error = None
+
+    if request.method == "POST":
+
+        email = request.form["email"].strip().lower()
+        password = request.form["password"]
+        confirm_password = request.form["confirm_password"]
+
+        if not email or not password or not confirm_password:
+            error = "All fields are required."
+
+        elif password != confirm_password:
+            error = "Passwords do not match."
+
+        elif len(password) < 8:
+            error = "Password must be at least 8 characters."
+
+        elif get_user_by_email(email):
+            error = "An account with this email already exists."
+
+        else:
+            password_hash = generate_password_hash(
+                password
+            )
+
+            user_id = create_user(
+                email,
+                password_hash
+            )
+
+            session["user_id"] = user_id
+
+            return redirect("/")
+
+    return render_template(
+        "register.html",
+        error=error
+    )
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+
+    error = None
+
+    if request.method == "POST":
+
+        email = request.form["email"].strip().lower()
+        password = request.form["password"]
+
+        user = get_user_by_email(email)
+
+        if (
+            user is None
+            or not check_password_hash(
+                user["password_hash"],
+                password
+            )
+        ):
+            error = "Incorrect email or password."
+
+        else:
+            session["user_id"] = user["id"]
+
+            return redirect("/")
+
+    return render_template(
+        "login.html",
+        error=error
+    )
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
+
+    return redirect("/login")
+
+@app.route(
+    "/push/subscribe",
+    methods=["POST"]
+)
+@login_required
+def subscribe_push():
+
+    subscription = request.get_json()
+
+    if not subscription:
+        return jsonify({
+            "error": "Missing subscription"
+        }), 400
+
+    endpoint = subscription.get("endpoint")
+    keys = subscription.get("keys", {})
+
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+
+    if not endpoint or not p256dh or not auth:
+        return jsonify({
+            "error": "Invalid subscription"
+        }), 400
+
+    save_push_subscription(
+        user_id=session["user_id"],
+        endpoint=endpoint,
+        p256dh=p256dh,
+        auth=auth
+    )
+
+    return jsonify({
+        "success": True
+    })
+
+VAPID_PUBLIC_KEY = os.getenv(
+    "VAPID_PUBLIC_KEY"
+)
+
+if not VAPID_PUBLIC_KEY:
+    raise ValueError(
+        "VAPID_PUBLIC_KEY is missing from .env"
+    )
+
+@app.route("/notifications")
+@login_required
+def notifications():
+
+    return render_template(
+        "notifications.html",
+        vapid_public_key=VAPID_PUBLIC_KEY
+    )
+
+@app.route(
+    "/push/test",
+    methods=["POST"]
+)
+@login_required
+def test_push():
+
+    send_push_to_user(
+        user_id=session["user_id"],
+        title="Trip Alert Test",
+        message="Notifications are working!"
+    )
+
+    return jsonify({
+        "success": True
+    })
+
+@app.route("/service-worker.js")
+def service_worker():
+    return send_from_directory(
+        "static",
+        "service-worker.js",
+        mimetype="application/javascript"
+    )
 
 
 if __name__ == "__main__":

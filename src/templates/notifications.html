@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Notifications - Trip Alert</title>
+</head>
+
+<body>
+
+    <h1>Trip notifications</h1>
+
+    <p>
+        Enable notifications to receive alerts about
+        delays and cancellations.
+    </p>
+
+    <button
+        id="enable-notifications"
+        type="button"
+    >
+        Enable notifications
+    </button>
+
+    <button
+        id="test-notification"
+        type="button"
+        disabled
+    >
+        Send test notification
+    </button>
+    <button
+    id="reset-notifications"
+    type="button"
+>
+    Reset notifications
+</button>
+
+    <p id="notification-status">
+        Checking notification support...
+    </p>
+
+    <br>
+
+    <a href="/">
+        Back
+    </a>
+
+
+    <script>
+
+        const vapidPublicKey =
+            "{{ vapid_public_key }}";
+
+        const enableButton =
+            document.getElementById(
+                "enable-notifications"
+            );
+
+        const testButton =
+            document.getElementById(
+                "test-notification"
+            );
+
+        const status =
+            document.getElementById(
+                "notification-status"
+            );
+
+
+        function urlBase64ToUint8Array(
+            base64String
+        ) {
+            const padding =
+                "=".repeat(
+                    (4 - base64String.length % 4) % 4
+                );
+
+            const base64 =
+                (base64String + padding)
+                    .replace(/-/g, "+")
+                    .replace(/_/g, "/");
+
+            const rawData =
+                window.atob(base64);
+
+            return Uint8Array.from(
+                [...rawData].map(
+                    character =>
+                        character.charCodeAt(0)
+                )
+            );
+        }
+
+
+        async function saveSubscription(
+            subscription
+        ) {
+
+            status.textContent =
+                "Saving notification subscription...";
+
+            const response =
+                await fetch(
+                    "/push/subscribe",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify(
+                            subscription.toJSON()
+                        )
+                    }
+                );
+
+
+            if (!response.ok) {
+
+                const text =
+                    await response.text();
+
+                throw new Error(
+                    "Server could not save subscription: "
+                    + text
+                );
+            }
+
+
+            status.textContent =
+                "Notifications enabled!";
+
+            enableButton.disabled = true;
+            testButton.disabled = false;
+        }
+
+
+        async function enableNotifications() {
+
+            try {
+
+                if (
+                    !("serviceWorker" in navigator)
+                ) {
+                    throw new Error(
+                        "Service workers are not supported."
+                    );
+                }
+
+
+                if (
+                    !("PushManager" in window)
+                ) {
+                    throw new Error(
+                        "Push notifications are not supported."
+                    );
+                }
+
+
+                status.textContent =
+                    "Requesting notification permission...";
+
+
+                const permission =
+                    await Notification
+                        .requestPermission();
+
+
+                if (
+                    permission !== "granted"
+                ) {
+                    throw new Error(
+                        "Notification permission was not granted."
+                    );
+                }
+
+
+                status.textContent =
+                    "Registering service worker...";
+
+
+                const registration =
+                    await navigator
+                        .serviceWorker
+.register(
+    "/service-worker.js"
+);
+                   
+
+
+                await navigator
+                    .serviceWorker
+                    .ready;
+
+
+                status.textContent =
+                    "Creating push subscription...";
+
+
+                let subscription =
+                    await registration
+                        .pushManager
+                        .getSubscription();
+
+
+                if (!subscription) {
+
+                    subscription =
+                        await registration
+                            .pushManager
+                            .subscribe({
+                                userVisibleOnly: true,
+
+                                applicationServerKey:
+                                    urlBase64ToUint8Array(
+                                        vapidPublicKey
+                                    )
+                            });
+
+                }
+
+
+                if (!subscription) {
+                    throw new Error(
+                        "Browser did not create a subscription."
+                    );
+                }
+
+
+                await saveSubscription(
+                    subscription
+                );
+
+
+            } catch (error) {
+
+                console.error(
+                    "Notification error:",
+                    error
+                );
+
+                status.textContent =
+                    "Error: " + error.message;
+
+                enableButton.disabled = false;
+                testButton.disabled = true;
+            }
+        }
+
+
+        enableButton.addEventListener(
+            "click",
+            enableNotifications
+        );
+
+
+        testButton.addEventListener(
+            "click",
+            async () => {
+
+                try {
+
+                    status.textContent =
+                        "Sending test notification...";
+
+
+                    const response =
+                        await fetch(
+                            "/push/test",
+                            {
+                                method: "POST"
+                            }
+                        );
+
+
+                    if (!response.ok) {
+                        throw new Error(
+                            "Server could not send test."
+                        );
+                    }
+
+
+                    status.textContent =
+                        "Test notification sent!";
+
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    status.textContent =
+                        "Error: " + error.message;
+                }
+
+            }
+        );
+const resetButton =
+    document.getElementById(
+        "reset-notifications"
+    );
+
+
+resetButton.addEventListener(
+    "click",
+    async () => {
+
+        try {
+
+            status.textContent =
+                "Resetting notifications...";
+
+
+            const registration =
+                await navigator
+                    .serviceWorker
+                    .getRegistration(
+                        "/"
+                    );
+
+
+            if (registration) {
+
+                const subscription =
+                    await registration
+                        .pushManager
+                        .getSubscription();
+
+
+                if (subscription) {
+                    await subscription.unsubscribe();
+                }
+
+            }
+
+
+            status.textContent =
+                "Notifications reset. Enable them again.";
+
+            enableButton.disabled = false;
+            testButton.disabled = true;
+
+
+        } catch (error) {
+
+            console.error(error);
+
+            status.textContent =
+                "Error resetting notifications: "
+                + error.message;
+
+        }
+
+    }
+);
+        async function checkExistingSubscription() {
+
+            try {
+
+                if (
+                    !("serviceWorker" in navigator)
+                    || !("PushManager" in window)
+                ) {
+
+                    status.textContent =
+                        "Push notifications are not supported in this browser.";
+
+                    enableButton.disabled = true;
+
+                    return;
+                }
+
+
+                const registration =
+                    await navigator
+                        .serviceWorker
+                        .getRegistration(
+                            "/"
+                        );
+
+
+                if (!registration) {
+
+                    status.textContent =
+                        "Notifications are not enabled yet.";
+
+                    return;
+                }
+
+
+                const subscription =
+                    await registration
+                        .pushManager
+                        .getSubscription();
+
+
+                if (subscription) {
+
+                    /*
+                     * Important:
+                     *
+                     * Even if the browser already has a
+                     * subscription, send it to our backend
+                     * again.
+                     *
+                     * This fixes cases where the browser
+                     * subscription exists but our database
+                     * was reset.
+                     */
+
+                    await saveSubscription(
+                        subscription
+                    );
+
+                } else {
+
+                    status.textContent =
+                        "Notifications are not enabled yet.";
+
+                }
+
+
+            } catch (error) {
+
+                console.error(error);
+
+                status.textContent =
+                    "Error checking notifications: "
+                    + error.message;
+            }
+        }
+
+
+        checkExistingSubscription();
+
+    </script>
+
+</body>
+
+</html>
