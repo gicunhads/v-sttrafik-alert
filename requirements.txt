@@ -3,7 +3,7 @@ gunicorn
 requests
 python-dotenv
 SQLAlchemy
-psycopg2-binary
+psycopg[binary]
 pywebpush
 py-vapid
 cryptography
