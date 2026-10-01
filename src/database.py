@@ -1,162 +1,208 @@
-import sqlite3
+import os
 from datetime import datetime
+
+from sqlalchemy import (
+    create_engine,
+    text,
+)
+from sqlalchemy.exc import IntegrityError
 
 from models import SavedTrip
 
 
-DATABASE = "trip_alert.db"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite:///trip_alert.db"
+)
+
+# Some hosting providers historically return postgres://,
+# while SQLAlchemy expects postgresql://.
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql://",
+        1
+    )
 
 
-def get_connection():
-    connection = sqlite3.connect(DATABASE)
-    connection.row_factory = sqlite3.Row
-    return connection
+engine_options = {
+    "pool_pre_ping": True
+}
+
+# SQLite needs this when the Flask app and background
+# scheduler access the database from different threads.
+if DATABASE_URL.startswith("sqlite"):
+    engine_options["connect_args"] = {
+        "check_same_thread": False
+    }
+
+
+engine = create_engine(
+    DATABASE_URL,
+    **engine_options
+)
 
 
 def create_tables():
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL
-        )
-    """)
-
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS saved_trips (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            stop_id TEXT NOT NULL,
-            stop_name TEXT NOT NULL,
-            line TEXT NOT NULL,
-            direction TEXT NOT NULL,
-            target_time TEXT NOT NULL,
-            days TEXT NOT NULL,
-            delay_threshold INTEGER NOT NULL,
-            FOREIGN KEY (user_id)
-                REFERENCES users(id)
-                ON DELETE CASCADE
-        )
-    """)
-
-    connection.execute("""
-        CREATE TABLE IF NOT EXISTS alerts_sent (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            trip_id INTEGER NOT NULL,
-            departure_time TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            sent_at TEXT NOT NULL,
-
-            FOREIGN KEY (trip_id)
-                REFERENCES saved_trips(id)
-                ON DELETE CASCADE,
-
-            UNIQUE(
-                trip_id,
-                departure_time,
-                reason
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL
             )
-        )
-    """)
-    connection.execute("""
-    CREATE TABLE IF NOT EXISTS push_subscriptions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        endpoint TEXT NOT NULL UNIQUE,
-        p256dh TEXT NOT NULL,
-        auth TEXT NOT NULL,
+        """))
 
-        FOREIGN KEY (user_id)
-            REFERENCES users(id)
-            ON DELETE CASCADE
-    )
-""")
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS saved_trips (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                stop_id TEXT NOT NULL,
+                stop_name TEXT NOT NULL,
+                line TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                target_time TEXT NOT NULL,
+                days TEXT NOT NULL,
+                delay_threshold INTEGER NOT NULL,
 
-    connection.commit()
-    connection.close()
+                FOREIGN KEY (user_id)
+                    REFERENCES users(id)
+                    ON DELETE CASCADE
+            )
+        """))
+
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS alerts_sent (
+                id INTEGER PRIMARY KEY,
+                trip_id INTEGER NOT NULL,
+                departure_time TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                sent_at TEXT NOT NULL,
+
+                FOREIGN KEY (trip_id)
+                    REFERENCES saved_trips(id)
+                    ON DELETE CASCADE,
+
+                UNIQUE(
+                    trip_id,
+                    departure_time,
+                    reason
+                )
+            )
+        """))
+
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+
+                FOREIGN KEY (user_id)
+                    REFERENCES users(id)
+                    ON DELETE CASCADE
+            )
+        """))
 
 
 def create_user(email, password_hash):
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    cursor = connection.execute("""
-        INSERT INTO users (
-            email,
-            password_hash
+        result = connection.execute(
+            text("""
+                INSERT INTO users (
+                    email,
+                    password_hash
+                )
+                VALUES (
+                    :email,
+                    :password_hash
+                )
+                RETURNING id
+            """),
+            {
+                "email": email,
+                "password_hash": password_hash
+            }
         )
-        VALUES (?, ?)
-    """, (
-        email,
-        password_hash
-    ))
 
-    connection.commit()
-
-    user_id = cursor.lastrowid
-
-    connection.close()
-
-    return user_id
+        return result.scalar_one()
 
 
 def get_user_by_email(email):
-    connection = get_connection()
+    with engine.connect() as connection:
 
-    user = connection.execute("""
-        SELECT *
-        FROM users
-        WHERE email = ?
-    """, (email,)).fetchone()
+        row = connection.execute(
+            text("""
+                SELECT *
+                FROM users
+                WHERE email = :email
+            """),
+            {
+                "email": email
+            }
+        ).mappings().first()
 
-    connection.close()
-
-    return user
+        return row
 
 
 def get_user_by_id(user_id):
-    connection = get_connection()
+    with engine.connect() as connection:
 
-    user = connection.execute("""
-        SELECT *
-        FROM users
-        WHERE id = ?
-    """, (user_id,)).fetchone()
+        row = connection.execute(
+            text("""
+                SELECT *
+                FROM users
+                WHERE id = :user_id
+            """),
+            {
+                "user_id": user_id
+            }
+        ).mappings().first()
 
-    connection.close()
-
-    return user
+        return row
 
 
 def insert_trip(trip):
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    connection.execute("""
-        INSERT INTO saved_trips (
-            user_id,
-            stop_id,
-            stop_name,
-            line,
-            direction,
-            target_time,
-            days,
-            delay_threshold
+        connection.execute(
+            text("""
+                INSERT INTO saved_trips (
+                    user_id,
+                    stop_id,
+                    stop_name,
+                    line,
+                    direction,
+                    target_time,
+                    days,
+                    delay_threshold
+                )
+                VALUES (
+                    :user_id,
+                    :stop_id,
+                    :stop_name,
+                    :line,
+                    :direction,
+                    :target_time,
+                    :days,
+                    :delay_threshold
+                )
+            """),
+            {
+                "user_id": trip.user_id,
+                "stop_id": trip.stop_id,
+                "stop_name": trip.stop_name,
+                "line": trip.line,
+                "direction": trip.direction,
+                "target_time": trip.target_time,
+                "days": ",".join(trip.days),
+                "delay_threshold":
+                    trip.delay_threshold
+            }
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        trip.user_id,
-        trip.stop_id,
-        trip.stop_name,
-        trip.line,
-        trip.direction,
-        trip.target_time,
-        ",".join(trip.days),
-        trip.delay_threshold
-    ))
-
-    connection.commit()
-    connection.close()
 
 
 def row_to_trip(row):
@@ -174,50 +220,62 @@ def row_to_trip(row):
 
 
 def get_saved_trips(user_id=None):
-    connection = get_connection()
+    with engine.connect() as connection:
 
-    if user_id is None:
-        rows = connection.execute("""
-            SELECT *
-            FROM saved_trips
-            ORDER BY id DESC
-        """).fetchall()
+        if user_id is None:
 
-    else:
-        rows = connection.execute("""
-            SELECT *
-            FROM saved_trips
-            WHERE user_id = ?
-            ORDER BY id DESC
-        """, (user_id,)).fetchall()
+            rows = connection.execute(
+                text("""
+                    SELECT *
+                    FROM saved_trips
+                    ORDER BY id DESC
+                """)
+            ).mappings().all()
 
-    connection.close()
+        else:
 
-    return [
-        row_to_trip(row)
-        for row in rows
-    ]
+            rows = connection.execute(
+                text("""
+                    SELECT *
+                    FROM saved_trips
+                    WHERE user_id = :user_id
+                    ORDER BY id DESC
+                """),
+                {
+                    "user_id": user_id
+                }
+            ).mappings().all()
+
+        return [
+            row_to_trip(row)
+            for row in rows
+        ]
 
 
 def delete_trip(trip_id, user_id):
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    connection.execute("""
-        DELETE FROM alerts_sent
-        WHERE trip_id = ?
-    """, (trip_id,))
+        connection.execute(
+            text("""
+                DELETE FROM alerts_sent
+                WHERE trip_id = :trip_id
+            """),
+            {
+                "trip_id": trip_id
+            }
+        )
 
-    connection.execute("""
-        DELETE FROM saved_trips
-        WHERE id = ?
-        AND user_id = ?
-    """, (
-        trip_id,
-        user_id
-    ))
-
-    connection.commit()
-    connection.close()
+        connection.execute(
+            text("""
+                DELETE FROM saved_trips
+                WHERE id = :trip_id
+                AND user_id = :user_id
+            """),
+            {
+                "trip_id": trip_id,
+                "user_id": user_id
+            }
+        )
 
 
 def alert_was_sent(
@@ -225,23 +283,26 @@ def alert_was_sent(
     departure_time,
     reason
 ):
-    connection = get_connection()
+    with engine.connect() as connection:
 
-    row = connection.execute("""
-        SELECT id
-        FROM alerts_sent
-        WHERE trip_id = ?
-          AND departure_time = ?
-          AND reason = ?
-    """, (
-        trip_id,
-        departure_time,
-        reason
-    )).fetchone()
+        row = connection.execute(
+            text("""
+                SELECT id
+                FROM alerts_sent
+                WHERE trip_id = :trip_id
+                  AND departure_time =
+                      :departure_time
+                  AND reason = :reason
+            """),
+            {
+                "trip_id": trip_id,
+                "departure_time":
+                    departure_time,
+                "reason": reason
+            }
+        ).first()
 
-    connection.close()
-
-    return row is not None
+        return row is not None
 
 
 def record_alert(
@@ -249,25 +310,39 @@ def record_alert(
     departure_time,
     reason
 ):
-    connection = get_connection()
+    try:
+        with engine.begin() as connection:
 
-    connection.execute("""
-        INSERT OR IGNORE INTO alerts_sent (
-            trip_id,
-            departure_time,
-            reason,
-            sent_at
-        )
-        VALUES (?, ?, ?, ?)
-    """, (
-        trip_id,
-        departure_time,
-        reason,
-        datetime.now().isoformat()
-    ))
+            connection.execute(
+                text("""
+                    INSERT INTO alerts_sent (
+                        trip_id,
+                        departure_time,
+                        reason,
+                        sent_at
+                    )
+                    VALUES (
+                        :trip_id,
+                        :departure_time,
+                        :reason,
+                        :sent_at
+                    )
+                """),
+                {
+                    "trip_id": trip_id,
+                    "departure_time":
+                        departure_time,
+                    "reason": reason,
+                    "sent_at":
+                        datetime.now().isoformat()
+                }
+            )
 
-    connection.commit()
-    connection.close()
+    except IntegrityError:
+        # The UNIQUE constraint means the same
+        # alert was already recorded.
+        pass
+
 
 def save_push_subscription(
     user_id,
@@ -275,54 +350,64 @@ def save_push_subscription(
     p256dh,
     auth
 ):
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    connection.execute("""
-        INSERT INTO push_subscriptions (
-            user_id,
-            endpoint,
-            p256dh,
-            auth
+        connection.execute(
+            text("""
+                INSERT INTO push_subscriptions (
+                    user_id,
+                    endpoint,
+                    p256dh,
+                    auth
+                )
+                VALUES (
+                    :user_id,
+                    :endpoint,
+                    :p256dh,
+                    :auth
+                )
+
+                ON CONFLICT(endpoint)
+                DO UPDATE SET
+                    user_id = excluded.user_id,
+                    p256dh = excluded.p256dh,
+                    auth = excluded.auth
+            """),
+            {
+                "user_id": user_id,
+                "endpoint": endpoint,
+                "p256dh": p256dh,
+                "auth": auth
+            }
         )
-        VALUES (?, ?, ?, ?)
-
-        ON CONFLICT(endpoint)
-        DO UPDATE SET
-            user_id = excluded.user_id,
-            p256dh = excluded.p256dh,
-            auth = excluded.auth
-    """, (
-        user_id,
-        endpoint,
-        p256dh,
-        auth
-    ))
-
-    connection.commit()
-    connection.close()
 
 
 def get_push_subscriptions(user_id):
-    connection = get_connection()
+    with engine.connect() as connection:
 
-    rows = connection.execute("""
-        SELECT *
-        FROM push_subscriptions
-        WHERE user_id = ?
-    """, (user_id,)).fetchall()
+        rows = connection.execute(
+            text("""
+                SELECT *
+                FROM push_subscriptions
+                WHERE user_id = :user_id
+            """),
+            {
+                "user_id": user_id
+            }
+        ).mappings().all()
 
-    connection.close()
-
-    return rows
+        return rows
 
 
 def delete_push_subscription(endpoint):
-    connection = get_connection()
+    with engine.begin() as connection:
 
-    connection.execute("""
-        DELETE FROM push_subscriptions
-        WHERE endpoint = ?
-    """, (endpoint,))
-
-    connection.commit()
-    connection.close()
+        connection.execute(
+            text("""
+                DELETE FROM push_subscriptions
+                WHERE endpoint = :endpoint
+            """),
+            {
+                "endpoint": endpoint
+            }
+        )

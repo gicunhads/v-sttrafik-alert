@@ -1,10 +1,7 @@
 import json
 import os
 
-from pywebpush import (
-    webpush,
-    WebPushException
-)
+from pywebpush import webpush, WebPushException
 
 from database import (
     get_push_subscriptions,
@@ -30,9 +27,10 @@ def send_push_to_user(
 
     if not subscriptions:
         print(
-            f"No push subscriptions for user {user_id}"
+            f"No push subscriptions "
+            f"for user {user_id}"
         )
-        return
+        return 0
 
     payload = json.dumps({
         "title": title,
@@ -40,30 +38,46 @@ def send_push_to_user(
         "url": "/trips"
     })
 
+    successful_pushes = 0
+
     for subscription in subscriptions:
 
         subscription_info = {
-            "endpoint": subscription["endpoint"],
+            "endpoint":
+                subscription["endpoint"],
 
             "keys": {
-                "p256dh": subscription["p256dh"],
-                "auth": subscription["auth"]
+                "p256dh":
+                    subscription["p256dh"],
+
+                "auth":
+                    subscription["auth"]
             }
         }
 
         try:
             webpush(
-                subscription_info=subscription_info,
+                subscription_info=
+                    subscription_info,
+
                 data=payload,
-                vapid_private_key=VAPID_PRIVATE_KEY,
+
+                vapid_private_key=
+                    VAPID_PRIVATE_KEY,
+
                 vapid_claims={
-                    "sub": "mailto:trip-alert@example.com"
+                    "sub":
+                        "mailto:trip-alert@example.com"
                 },
+
                 ttl=300
             )
 
+            successful_pushes += 1
+
             print(
-                f"Push sent to user {user_id}"
+                f"Push sent to user "
+                f"{user_id}"
             )
 
         except WebPushException as error:
@@ -75,9 +89,12 @@ def send_push_to_user(
 
             if (
                 error.response is not None
-                and error.response.status_code
+                and
+                error.response.status_code
                 in (404, 410)
             ):
                 delete_push_subscription(
                     subscription["endpoint"]
                 )
+
+    return successful_pushes

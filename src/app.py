@@ -1,5 +1,9 @@
 from datetime import datetime, timedelta
 import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
 from flask import (
     Flask,
     render_template,
@@ -23,8 +27,6 @@ from database import (
     get_user_by_id
 )
 from functools import wraps
-from apscheduler.schedulers.background import BackgroundScheduler
-
 from trafiklab import search_stop, get_departures
 from models import SavedTrip
 from monitor import check_saved_trips
@@ -330,7 +332,7 @@ def remove_trip(trip_id):
     )
 
     return redirect("/trips")
-create_tables()
+
 
 
 
@@ -475,14 +477,22 @@ def notifications():
 @login_required
 def test_push():
 
-    send_push_to_user(
+    successful_pushes = send_push_to_user(
         user_id=session["user_id"],
         title="Trip Alert Test",
         message="Notifications are working!"
     )
 
+    if successful_pushes == 0:
+        return jsonify({
+            "success": False,
+            "error":
+                "No notification was delivered."
+        }), 500
+
     return jsonify({
-        "success": True
+        "success": True,
+        "devices": successful_pushes
     })
 
 @app.route("/service-worker.js")
@@ -492,19 +502,19 @@ def service_worker():
         "service-worker.js",
         mimetype="application/javascript"
     )
-
-
-if __name__ == "__main__":
-
-    scheduler = BackgroundScheduler()
-
-    scheduler.add_job(
-        check_saved_trips,
-        "interval",
-        minutes=5
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(
+        "static",
+        "manifest.json",
+        mimetype="application/manifest+json"
     )
 
-    scheduler.start()
+
+
+
+create_tables()
+if __name__ == "__main__":
 
     app.run(
         debug=True,

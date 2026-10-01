@@ -3,23 +3,76 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="theme-color"
+        content="#ffffff"
+    >
+
+    <meta
+        name="apple-mobile-web-app-capable"
+        content="yes"
+    >
+
+    <meta
+        name="apple-mobile-web-app-title"
+        content="Trip Alert"
+    >
+
+    <link
+        rel="manifest"
+        href="/manifest.json"
+    >
 
     <title>Trip Alert</title>
 </head>
-<p>
-    <a href="/notifications">
-        Enable trip notifications
-    </a>
-</p>
+<script>
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+            .register("/service-worker.js")
+            .catch(error => {
+                console.error(
+                    "Service worker registration failed:",
+                    error
+                );
+            });
+    }
+</script>
 <body>
 
     <h1>Trip Alert</h1>
-    <a href="/trips">My Trips</a>
 
-    <p>Get notified when something happens to your usual trip.</p>
+    <p>
+        Get notified when something happens
+        to your usual trip.
+    </p>
 
-    <h2>Where do you travel from?</h2>
+    <nav>
+        <a href="/trips">
+            My Trips
+        </a>
+
+        |
+
+        <a href="/notifications">
+            Notifications
+        </a>
+
+        |
+
+        <a href="/logout">
+            Log out
+        </a>
+    </nav>
+
+    <h2>
+        Where do you travel from?
+    </h2>
 
     <form method="POST">
 
@@ -38,27 +91,39 @@
     </form>
 
 
-   {% if stops %}
+    {% if stops %}
 
-    <h2>Select a stop</h2>
+        <h2>Select a stop</h2>
 
-    {% for stop in stops %}
+        {% for stop in stops %}
 
-        <form method="GET" action="/stop/{{ stop.id }}">
+            <form
+                method="GET"
+                action="/stop/{{ stop.id }}"
+            >
 
-            <button type="submit">
-                <strong>{{ stop.name }}</strong>
-                <br>
-                {{ stop.transport_modes | join(", ") }}
-            </button>
+                <button type="submit">
 
-        </form>
+                    <strong>
+                        {{ stop.name }}
+                    </strong>
 
-        <br>
+                    <br>
 
-    {% endfor %}
+                    {{
+                        stop.transport_modes
+                        | join(", ")
+                    }}
 
-{% endif %}
+                </button>
+
+            </form>
+
+            <br>
+
+        {% endfor %}
+
+    {% endif %}
 
 </body>
 

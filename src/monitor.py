@@ -1,4 +1,5 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from database import (
     get_saved_trips,
@@ -6,14 +7,28 @@ from database import (
     record_alert
 )
 from trafiklab import get_departures
-from departures import find_departure, should_notify
+from departures import (
+    find_departure,
+    should_notify
+)
 from push_notifications import (
     send_push_to_user
 )
 
 
-def should_check_now(trip, minutes_before=30):
-    now = datetime.now()
+SWEDEN_TIMEZONE = ZoneInfo(
+    "Europe/Stockholm"
+)
+
+
+def should_check_now(
+    trip,
+    minutes_before=30,
+    minutes_after=30
+):
+    now = datetime.now(
+        SWEDEN_TIMEZONE
+    )
 
     target = datetime.strptime(
         trip.target_time,
@@ -31,43 +46,63 @@ def should_check_now(trip, minutes_before=30):
     )
 
     minutes_until_trip = (
-        target_minutes - current_minutes
+        target_minutes
+        - current_minutes
     )
 
-    return 0 <= minutes_until_trip <= minutes_before
+    return (
+        -minutes_after
+        <= minutes_until_trip
+        <= minutes_before
+    )
 
 
 def check_saved_trips():
     trips = get_saved_trips()
-    today = datetime.now().strftime("%A")
 
-    print(f"\nChecking {len(trips)} saved trip(s)...")
+    today = datetime.now(
+        SWEDEN_TIMEZONE
+    ).strftime("%A")
+
+    print(
+        f"\nChecking "
+        f"{len(trips)} saved trip(s)..."
+    )
 
     for trip in trips:
 
-        # Is this trip scheduled for today?
+        # Only monitor trips scheduled
+        # for the current weekday.
         if today not in trip.days:
             print(
-                f"Skipping {trip.line} → {trip.direction}: "
+                f"Skipping {trip.line} "
+                f"→ {trip.direction}: "
                 f"not scheduled for {today}"
             )
             continue
 
-        # Is the trip happening within the next 30 minutes?
+        # Monitor from 30 minutes before
+        # until 30 minutes after the
+        # scheduled departure.
         if not should_check_now(trip):
             print(
-                f"Skipping {trip.line} → {trip.direction}: "
+                f"Skipping {trip.line} "
+                f"→ {trip.direction}: "
                 f"not within monitoring window"
             )
             continue
 
         print(
-            f"Checking {trip.line} → {trip.direction} "
+            f"Checking {trip.line} "
+            f"→ {trip.direction} "
             f"from {trip.stop_name}"
         )
 
-        # Only call Trafiklab when we actually need to check
-        departures = get_departures(trip.stop_id)
+        # Only call Trafiklab when this
+        # trip actually needs checking.
+        departures = get_departures(
+            trip.stop_id
+        )
 
         departure = find_departure(
             departures,
@@ -75,7 +110,9 @@ def check_saved_trips():
         )
 
         if departure is None:
-            print("Departure not found.")
+            print(
+                "Departure not found."
+            )
             continue
 
         reasons = should_notify(
@@ -84,39 +121,67 @@ def check_saved_trips():
         )
 
         if not reasons:
-            print("No notification needed.")
+            print(
+                "No notification needed."
+            )
             continue
 
-        # Create one string representing this alert
-        reason_text = "\n".join(reasons)
-        departure_time = departure["scheduled"]
+        reason_text = "\n".join(
+            reasons
+        )
 
-        # Check SQLite instead of Python memory
+        departure_time = departure[
+            "scheduled"
+        ]
+
+        # Do not send the exact same
+        # alert repeatedly.
         if alert_was_sent(
             trip.id,
             departure_time,
             reason_text
         ):
-            print("Alert already sent.")
+            print(
+                "Alert already sent."
+            )
             continue
 
-        send_push_to_user(
-    user_id=trip.user_id,
-    title=(
-        f"Trip Alert: "
-        f"{trip.line} → {trip.direction}"
-    ),
-    message=reason_text
-)
-
-        # Remember the notification in SQLite
-        record_alert(
-            trip.id,
-            departure_time,
-            reason_text
+        successful_pushes = (
+            send_push_to_user(
+                user_id=trip.user_id,
+                title=(
+                    f"Trip Alert: "
+                    f"{trip.line} → "
+                    f"{trip.direction}"
+                ),
+                message=reason_text
+            )
         )
 
-        print("Notification sent.")
+        # Only record the alert if at
+        # least one device actually
+        # received the push.
+        if successful_pushes > 0:
+
+            record_alert(
+                trip.id,
+                departure_time,
+                reason_text
+            )
+
+            print(
+                f"Notification sent to "
+                f"{successful_pushes} "
+                f"device(s)."
+            )
+
+        else:
+
+            print(
+                "Notification was not "
+                "delivered. Alert was "
+                "not marked as sent."
+            )
 
 
 if __name__ == "__main__":
