@@ -1,5 +1,7 @@
+import base64
 import json
 import os
+import tempfile
 
 from pywebpush import (
     webpush,
@@ -12,14 +14,59 @@ from database import (
 )
 
 
-VAPID_PRIVATE_KEY = os.getenv(
-    "VAPID_PRIVATE_KEY"
-)
-
-if not VAPID_PRIVATE_KEY:
-    raise ValueError(
-        "VAPID_PRIVATE_KEY is missing."
+def get_vapid_private_key():
+    encoded_key = os.getenv(
+        "VAPID_PRIVATE_KEY_BASE64"
     )
+
+    if encoded_key:
+        try:
+            private_key = base64.b64decode(
+                encoded_key
+            )
+        except Exception as error:
+            raise ValueError(
+                "VAPID_PRIVATE_KEY_BASE64 "
+                "is invalid."
+            ) from error
+
+        key_path = os.path.join(
+            tempfile.gettempdir(),
+            "vapid_private.pem"
+        )
+
+        with open(
+            key_path,
+            "wb"
+        ) as key_file:
+            key_file.write(
+                private_key
+            )
+
+        return key_path
+
+    # Local development fallback.
+    local_key_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "vapid_private.pem"
+        )
+    )
+
+    if os.path.exists(
+        local_key_path
+    ):
+        return local_key_path
+
+    raise ValueError(
+        "No VAPID private key is configured."
+    )
+
+
+VAPID_PRIVATE_KEY = (
+    get_vapid_private_key()
+)
 
 
 def send_push_to_user(
@@ -27,8 +74,10 @@ def send_push_to_user(
     title,
     message
 ):
-    subscriptions = get_push_subscriptions(
-        user_id
+    subscriptions = (
+        get_push_subscriptions(
+            user_id
+        )
     )
 
     if not subscriptions:
