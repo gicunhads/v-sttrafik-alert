@@ -1,7 +1,10 @@
 import json
 import os
 
-from pywebpush import webpush, WebPushException
+from pywebpush import (
+    webpush,
+    WebPushException
+)
 
 from database import (
     get_push_subscriptions,
@@ -9,11 +12,14 @@ from database import (
 )
 
 
-VAPID_PRIVATE_KEY = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "vapid_private.pem"
+VAPID_PRIVATE_KEY = os.getenv(
+    "VAPID_PRIVATE_KEY"
 )
+
+if not VAPID_PRIVATE_KEY:
+    raise ValueError(
+        "VAPID_PRIVATE_KEY is missing."
+    )
 
 
 def send_push_to_user(
