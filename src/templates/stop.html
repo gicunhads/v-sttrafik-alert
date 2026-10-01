@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Trip Alert</title>
+</head>
+
+<body>
+
+    <a href="/">← Back</a>
+
+    <h1>{{ stop_name }}</h1>
+
+    <p>Select your line:</p>
+
+    {% for line, information in lines.items() %}
+
+        <div>
+
+            <h2>
+                {{ information.transport }}
+                {{ line }}
+            </h2>
+
+            <p>Directions:</p>
+
+            {% for direction in information.directions %}
+
+    <form
+        method="GET"
+        action="/trip/new"
+        style="display: inline;"
+    >
+        <input
+            type="hidden"
+            name="stop_id"
+            value="{{ stop_id }}"
+        >
+
+        <input
+            type="hidden"
+            name="stop_name"
+            value="{{ stop_name }}"
+        >
+
+        <input
+            type="hidden"
+            name="line"
+            value="{{ line }}"
+        >
+
+        <input
+            type="hidden"
+            name="direction"
+            value="{{ direction }}"
+        >
+
+        <button type="submit">
+            {{ direction }}
+        </button>
+    </form>
+
+{% endfor %}
+
+        </div>
+
+    {% endfor %}
+
+</body>
+
+</html>

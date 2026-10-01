@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <br><br>
+
+    <a href="/trips">
+        View My Trips
+    </a>
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Trip Saved - Trip Alert</title>
+</head>
+
+<body>
+
+    <h1>Trip Saved</h1>
+
+    <h2>
+        {{ trip.stop_name }} → {{ trip.direction }}
+    </h2>
+
+    <p>
+        Line: {{ trip.line }}
+    </p>
+
+    <p>
+        Time: {{ trip.target_time }}
+    </p>
+
+    <p>
+        Days:
+        {{ trip.days | join(", ") }}
+    </p>
+
+    <p>
+        Alert when delayed by
+        {{ trip.delay_threshold }} minutes
+    </p>
+
+    <a href="/">
+        Add another trip
+    </a>
+
+</body>
+
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>New Trip - Trip Alert</title>
+</head>
+
+<body>
+
+    <h1>Save Trip</h1>
+
+    <h2>
+        {{ stop_name }} → {{ direction }}
+    </h2>
+
+    <p>
+        Line {{ line }}
+    </p>
+
+
+    {% if departures is none %}
+
+        <!-- STEP 1:
+             User tells us approximately when
+             they normally travel.
+        -->
+
+        <form
+            method="POST"
+            action="/trip/find-departures"
+        >
+
+            <input
+                type="hidden"
+                name="stop_id"
+                value="{{ stop_id }}"
+            >
+
+            <input
+                type="hidden"
+                name="stop_name"
+                value="{{ stop_name }}"
+            >
+
+            <input
+                type="hidden"
+                name="line"
+                value="{{ line }}"
+            >
+
+            <input
+                type="hidden"
+                name="direction"
+                value="{{ direction }}"
+            >
+
+
+            <h2>Repeat on</h2>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Monday"
+                >
+                Monday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Tuesday"
+                >
+                Tuesday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Wednesday"
+                >
+                Wednesday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Thursday"
+                >
+                Thursday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Friday"
+                >
+                Friday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Saturday"
+                >
+                Saturday
+            </label>
+
+            <br>
+
+
+            <label>
+                <input
+                    type="checkbox"
+                    name="days"
+                    value="Sunday"
+                >
+                Sunday
+            </label>
+
+
+            <h2>
+                Around what time do you travel?
+            </h2>
+
+            <input
+                type="time"
+                name="approximate_time"
+                required
+            >
+
+
+            <h2>
+                Notify me when delayed by
+            </h2>
+
+            <select
+                name="delay_threshold"
+                required
+            >
+
+                <option value="3">
+                    3 minutes
+                </option>
+
+                <option
+                    value="5"
+                    selected
+                >
+                    5 minutes
+                </option>
+
+                <option value="10">
+                    10 minutes
+                </option>
+
+                <option value="15">
+                    15 minutes
+                </option>
+
+            </select>
+
+
+            <br>
+            <br>
+
+
+            <button type="submit">
+                Find departures
+            </button>
+
+        </form>
+
+
+    {% else %}
+
+        <!-- STEP 2:
+             Trafiklab has returned actual
+             departures near the requested time.
+        -->
+
+
+        <p>
+            You searched around
+            <strong>{{ approximate_time }}</strong>
+            on
+            <strong>{{ searched_date }}</strong>.
+        </p>
+
+
+        {% if departures %}
+
+            <h2>
+                Choose the closest departure
+            </h2>
+
+
+            <form
+                method="POST"
+                action="/trip/save"
+            >
+
+                <input
+                    type="hidden"
+                    name="stop_id"
+                    value="{{ stop_id }}"
+                >
+
+                <input
+                    type="hidden"
+                    name="stop_name"
+                    value="{{ stop_name }}"
+                >
+
+                <input
+                    type="hidden"
+                    name="line"
+                    value="{{ line }}"
+                >
+
+                <input
+                    type="hidden"
+                    name="direction"
+                    value="{{ direction }}"
+                >
+
+                <input
+                    type="hidden"
+                    name="delay_threshold"
+                    value="{{ delay_threshold }}"
+                >
+
+
+                {% for day in selected_days %}
+
+                    <input
+                        type="hidden"
+                        name="days"
+                        value="{{ day }}"
+                    >
+
+                {% endfor %}
+
+
+                {% for departure in departures %}
+
+                    <label>
+
+                        <input
+                            type="radio"
+                            name="target_time"
+                            value="{{ departure.scheduled[11:16] }}"
+                            required
+                        >
+
+                        {{ departure.scheduled[11:16] }}
+
+                    </label>
+
+                    <br>
+
+                {% endfor %}
+
+
+                <br>
+
+
+                <button type="submit">
+                    Save Trip
+                </button>
+
+            </form>
+
+
+        {% else %}
+
+            <p>
+                No matching departures were found
+                near that time.
+            </p>
+
+        {% endif %}
+
+
+        <br>
+
+
+        <a
+            href="/trip/new?stop_id={{ stop_id }}&stop_name={{ stop_name }}&line={{ line }}&direction={{ direction }}"
+        >
+            Search another time
+        </a>
+
+
+    {% endif %}
+
+
+    <br>
+    <br>
+
+
+    <a href="/">
+        Cancel
+    </a>
+
+
+</body>
+
+</html>

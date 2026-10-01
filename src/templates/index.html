@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Trip Alert</title>
+</head>
+
+<body>
+
+    <h1>Trip Alert</h1>
+    <a href="/trips">My Trips</a>
+
+    <p>Get notified when something happens to your usual trip.</p>
+
+    <h2>Where do you travel from?</h2>
+
+    <form method="POST">
+
+        <input
+            type="text"
+            name="stop_name"
+            placeholder="Search for a stop..."
+            value="{{ search }}"
+            required
+        >
+
+        <button type="submit">
+            Search
+        </button>
+
+    </form>
+
+
+   {% if stops %}
+
+    <h2>Select a stop</h2>
+
+    {% for stop in stops %}
+
+        <form method="GET" action="/stop/{{ stop.id }}">
+
+            <button type="submit">
+                <strong>{{ stop.name }}</strong>
+                <br>
+                {{ stop.transport_modes | join(", ") }}
+            </button>
+
+        </form>
+
+        <br>
+
+    {% endfor %}
+
+{% endif %}
+
+</body>
+
+</html>

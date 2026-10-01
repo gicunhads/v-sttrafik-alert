@@ -1,7 +1,8 @@
 import os
-
 import requests
+
 from dotenv import load_dotenv
+
 
 load_dotenv()
 
@@ -26,8 +27,11 @@ def search_stop(stop_name):
     return response.json()["stop_groups"]
 
 
-def get_departures(stop_id):
-    url = f"{BASE_URL}/departures/{stop_id}"
+def get_departures(stop_id, search_time=None):
+    if search_time:
+        url = f"{BASE_URL}/departures/{stop_id}/{search_time}"
+    else:
+        url = f"{BASE_URL}/departures/{stop_id}"
 
     response = requests.get(
         url,

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>My Trips - Trip Alert</title>
+</head>
+
+<body>
+
+    <h1>My Trips</h1>
+
+    {% if trips %}
+
+        {% for trip in trips %}
+
+            <div>
+
+                <h2>
+                    {{ trip.stop_name }}
+                    →
+                    {{ trip.direction }}
+                </h2>
+
+                <p>
+                    Line {{ trip.line }}
+                </p>
+
+                <p>
+                    {{ trip.target_time }}
+                </p>
+
+                <p>
+                    {{ trip.days | join(", ") }}
+                </p>
+
+                <p>
+                    Alert at {{ trip.delay_threshold }}
+                    minutes delay
+                </p>
+                <form
+    method="POST"
+    action="/trip/{{ trip.id }}/delete"
+>
+    <button type="submit">
+        Delete Trip
+    </button>
+</form>
+            </div>
+
+            <hr>
+
+        {% endfor %}
+
+    {% else %}
+
+        <p>
+            You haven't saved any trips yet.
+        </p>
+
+    {% endif %}
+
+
+    <a href="/">
+        Add trip
+    </a>
+
+</body>
+
+</html>
