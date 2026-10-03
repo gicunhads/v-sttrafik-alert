@@ -511,7 +511,9 @@ def manifest():
     )
 
 
-
+@app.route("/google20ad24287c916cbb.html")
+def google_site_verification():
+    return app.send_static_file("google20ad24287c916cbb.html")
 
 create_tables()
 if __name__ == "__main__":
