@@ -526,35 +526,45 @@ def google_site_verification():
     )
 
 
-# TEMPORARY DATABASE DIAGNOSTIC.
-# Remove this route after the database issue is solved.
-@app.route("/debug/database")
-@login_required
-def debug_database():
+@app.route("/cron/check-trips", methods=["POST"])
+def cron_check_trips():
+    cron_secret = os.getenv("CRON_SECRET")
 
-    with engine.connect() as connection:
+    if not cron_secret:
+        print("CRON_SECRET is not configured.")
+        return jsonify({
+            "success": False,
+            "error": "Cron is not configured."
+        }), 500
 
-        trip_count = connection.execute(
-            text(
-                "SELECT COUNT(*) "
-                "FROM saved_trips"
-            )
-        ).scalar_one()
+    provided_secret = request.headers.get(
+        "X-Cron-Secret"
+    )
 
-        if engine.dialect.name == "postgresql":
-            database_name = connection.execute(
-                text("SELECT current_database()")
-            ).scalar_one()
-        else:
-            database_name = "SQLite"
+    if provided_secret != cron_secret:
+        return jsonify({
+            "success": False,
+            "error": "Unauthorized."
+        }), 401
 
-    return jsonify({
-        "database_type": engine.dialect.name,
-        "database_name": database_name,
-        "database_host": engine.url.host or "local",
-        "saved_trip_count": trip_count
-    })
+    try:
+        check_saved_trips()
 
+        return jsonify({
+            "success": True,
+            "message": "Trip check completed."
+        })
+
+    except Exception as error:
+        print(
+            "Cron trip check failed:",
+            repr(error)
+        )
+
+        return jsonify({
+            "success": False,
+            "error": "Trip check failed."
+        }), 500
 
 create_tables()
 
