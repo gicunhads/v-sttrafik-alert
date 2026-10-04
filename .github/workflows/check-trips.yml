@@ -1,3 +1,33 @@
+      - name: Diagnose database connection
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          url = os.environ["DATABASE_URL"]
+
+          if url.startswith("postgres://"):
+              url = url.replace("postgres://", "postgresql://", 1)
+
+          engine = create_engine(url)
+
+          with engine.connect() as connection:
+              info = connection.execute(text("""
+                  SELECT
+                      current_database(),
+                      current_user,
+                      COUNT(*)
+                  FROM saved_trips
+                  GROUP BY current_database(), current_user
+              """)).first()
+
+              print("GitHub database:", info[0])
+              print("GitHub database user:", info[1])
+              print("Trips visible directly:", info[2])
+          PY
+
 name: Check Västtrafik trips
 
 on:
