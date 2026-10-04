@@ -566,6 +566,49 @@ def cron_check_trips():
             "error": "Trip check failed."
         }), 500
 
+@app.route("/cron/test-push", methods=["POST"])
+def cron_test_push():
+    cron_secret = os.getenv("CRON_SECRET")
+
+    if not cron_secret:
+        return jsonify({
+            "success": False,
+            "error": "Cron is not configured."
+        }), 500
+
+    provided_secret = request.headers.get("X-Cron-Secret")
+
+    if provided_secret != cron_secret:
+        return jsonify({
+            "success": False,
+            "error": "Unauthorized."
+        }), 401
+
+    # Send the push to the user currently owning
+    # the saved trip(s).
+    trips = get_saved_trips()
+
+    if not trips:
+        return jsonify({
+            "success": False,
+            "error": "No saved trips found."
+        }), 404
+
+    user_id = trips[0].user_id
+
+    successful_pushes = send_push_to_user(
+        user_id=user_id,
+        title="Cron Test",
+        message="Cron → Render → iPhone is working!"
+    )
+
+    return jsonify({
+        "success": successful_pushes > 0,
+        "devices": successful_pushes
+    })
+
+
+
 create_tables()
 
 
