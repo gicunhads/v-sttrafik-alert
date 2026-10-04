@@ -57,7 +57,6 @@ if not app.secret_key:
 def login_required(view):
     @wraps(view)
     def wrapped_view(*args, **kwargs):
-
         if "user_id" not in session:
             return redirect("/login")
 
@@ -106,6 +105,7 @@ def index():
 
 
 @app.route("/stop/<stop_id>")
+@login_required
 def select_stop(stop_id):
     departures = get_departures(stop_id)
 
@@ -165,17 +165,13 @@ def new_trip():
 )
 @login_required
 def find_trip_departures():
-
     stop_id = request.form["stop_id"]
     stop_name = request.form["stop_name"]
     line = request.form["line"]
     direction = request.form["direction"]
 
     days = request.form.getlist("days")
-
-    approximate_time = request.form[
-        "approximate_time"
-    ]
+    approximate_time = request.form["approximate_time"]
 
     delay_threshold = int(
         request.form["delay_threshold"]
@@ -194,7 +190,7 @@ def find_trip_departures():
         "%H:%M"
     )
 
-    # Trafiklab returns a 60-minute interval.
+    # Trafiklab returns departures for a time window.
     # Start 30 minutes before the requested time.
     search_datetime = datetime.combine(
         next_date,
@@ -212,66 +208,64 @@ def find_trip_departures():
 
     matching_departures = []
 
+    selected_line = str(line).strip()
+    selected_direction = direction.strip().lower()
+
     for departure in departures:
         route = departure["route"]
 
-       for departure in departures:
-    route = departure["route"]
+        departure_line = str(
+            route.get("designation", "")
+        ).strip()
 
-    departure_line = str(
-        route.get("designation", "")
-    ).strip()
+        departure_direction = str(
+            route.get("direction", "")
+        ).strip().lower()
 
-    departure_direction = str(
-        route.get("direction", "")
-    ).strip().lower()
-
-    selected_direction = direction.strip().lower()
-
-    # Trafiklab direction text can change along the same route.
-    # Example:
-    # "Bäckebol via Lindholmen" -> "Bäckebol"
-    #
-    # Therefore match the line exactly, but allow compatible
-    # direction descriptions.
-    direction_matches = (
-        departure_direction == selected_direction
-        or departure_direction in selected_direction
-        or selected_direction in departure_direction
-    )
-
-    if (
-        departure_line == str(line).strip()
-        and direction_matches
-    ):
-        scheduled = datetime.fromisoformat(
-            departure["scheduled"]
+        # Trafiklab direction text can change along
+        # the same route.
+        #
+        # Example:
+        # "Bäckebol via Lindholmen"
+        # may appear simply as:
+        # "Bäckebol"
+        direction_matches = (
+            departure_direction == selected_direction
+            or departure_direction in selected_direction
+            or selected_direction in departure_direction
         )
 
-        requested = datetime.combine(
-            next_date,
-            approximate.time()
-        )
-
-        difference = abs(
-            (
-                scheduled.replace(tzinfo=None)
-                - requested
-            ).total_seconds()
-        )
-
-        matching_departures.append(
-            (
-                difference,
-                departure
+        if (
+            departure_line == selected_line
+            and direction_matches
+        ):
+            scheduled = datetime.fromisoformat(
+                departure["scheduled"]
             )
-        )
+
+            requested = datetime.combine(
+                next_date,
+                approximate.time()
+            )
+
+            difference = abs(
+                (
+                    scheduled.replace(tzinfo=None)
+                    - requested
+                ).total_seconds()
+            )
+
+            matching_departures.append(
+                (
+                    difference,
+                    departure
+                )
+            )
 
     matching_departures.sort(
         key=lambda item: item[0]
     )
 
-    # Show at most the three closest departures
     closest_departures = [
         departure
         for _, departure
@@ -295,7 +289,6 @@ def find_trip_departures():
 @app.route("/trip/save", methods=["POST"])
 @login_required
 def save_trip():
-
     stop_id = request.form["stop_id"]
     stop_name = request.form["stop_name"]
     line = request.form["line"]
@@ -334,7 +327,6 @@ def save_trip():
 @app.route("/trips")
 @login_required
 def trips():
-
     saved_trips = get_saved_trips(
         session["user_id"]
     )
@@ -351,7 +343,6 @@ def trips():
 )
 @login_required
 def remove_trip(trip_id):
-
     delete_trip(
         trip_id,
         session["user_id"]
@@ -362,11 +353,9 @@ def remove_trip(trip_id):
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-
     error = None
 
     if request.method == "POST":
-
         email = request.form["email"].strip().lower()
         password = request.form["password"]
         confirm_password = request.form["confirm_password"]
@@ -405,11 +394,9 @@ def register():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-
     error = None
 
     if request.method == "POST":
-
         email = request.form["email"].strip().lower()
         password = request.form["password"]
 
@@ -437,7 +424,6 @@ def login():
 
 @app.route("/logout")
 def logout():
-
     session.clear()
 
     return redirect("/login")
@@ -449,7 +435,6 @@ def logout():
 )
 @login_required
 def subscribe_push():
-
     subscription = request.get_json()
 
     if not subscription:
@@ -493,7 +478,6 @@ if not VAPID_PUBLIC_KEY:
 @app.route("/notifications")
 @login_required
 def notifications():
-
     return render_template(
         "notifications.html",
         vapid_public_key=VAPID_PUBLIC_KEY
@@ -506,7 +490,6 @@ def notifications():
 )
 @login_required
 def test_push():
-
     successful_pushes = send_push_to_user(
         user_id=session["user_id"],
         title="Trip Alert Test",
@@ -557,6 +540,7 @@ def cron_check_trips():
 
     if not cron_secret:
         print("CRON_SECRET is not configured.")
+
         return jsonify({
             "success": False,
             "error": "Cron is not configured."
@@ -591,54 +575,11 @@ def cron_check_trips():
             "error": "Trip check failed."
         }), 500
 
-@app.route("/cron/test-push", methods=["POST"])
-def cron_test_push():
-    cron_secret = os.getenv("CRON_SECRET")
-
-    if not cron_secret:
-        return jsonify({
-            "success": False,
-            "error": "Cron is not configured."
-        }), 500
-
-    provided_secret = request.headers.get("X-Cron-Secret")
-
-    if provided_secret != cron_secret:
-        return jsonify({
-            "success": False,
-            "error": "Unauthorized."
-        }), 401
-
-    # Send the push to the user currently owning
-    # the saved trip(s).
-    trips = get_saved_trips()
-
-    if not trips:
-        return jsonify({
-            "success": False,
-            "error": "No saved trips found."
-        }), 404
-
-    user_id = trips[0].user_id
-
-    successful_pushes = send_push_to_user(
-        user_id=user_id,
-        title="Cron Test",
-        message="Cron → Render → iPhone is working!"
-    )
-
-    return jsonify({
-        "success": successful_pushes > 0,
-        "devices": successful_pushes
-    })
-
-
 
 create_tables()
 
 
 if __name__ == "__main__":
-
     app.run(
         debug=True,
         port=5001,
