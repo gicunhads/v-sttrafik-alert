@@ -219,8 +219,12 @@
         {% if departures %}
 
             <h2>
-                Choose the closest departure
+                Choose your departure
             </h2>
+
+            <p>
+                Select the departure you normally take.
+            </p>
 
 
             <form
@@ -248,12 +252,6 @@
 
                 <input
                     type="hidden"
-                    name="direction"
-                    value="{{ direction }}"
-                >
-
-                <input
-                    type="hidden"
                     name="delay_threshold"
                     value="{{ delay_threshold }}"
                 >
@@ -276,21 +274,27 @@
 
                         <input
                             type="radio"
-                            name="target_time"
-                            value="{{ departure.scheduled[11:16] }}"
+                            name="selected_departure"
+                            value="{{ departure.scheduled[11:16] }}|||{{ departure.route.direction }}"
                             required
                         >
 
-                        {{ departure.scheduled[11:16] }}
+                        <strong>
+                            {{ departure.scheduled[11:16] }}
+                        </strong>
+
+                        —
+                        Line {{ departure.route.designation }}
+                        →
+
+                        {{ departure.route.direction }}
 
                     </label>
 
                     <br>
+                    <br>
 
                 {% endfor %}
-
-
-                <br>
 
 
                 <button type="submit">
@@ -303,8 +307,8 @@
         {% else %}
 
             <p>
-                No matching departures were found
-                near that time.
+                No departures for line {{ line }}
+                were found near that time.
             </p>
 
         {% endif %}

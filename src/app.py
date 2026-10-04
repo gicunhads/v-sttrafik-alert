@@ -190,8 +190,6 @@ def find_trip_departures():
         "%H:%M"
     )
 
-    # Trafiklab returns departures for a time window.
-    # Start 30 minutes before the requested time.
     search_datetime = datetime.combine(
         next_date,
         approximate.time()
@@ -209,7 +207,11 @@ def find_trip_departures():
     matching_departures = []
 
     selected_line = str(line).strip()
-    selected_direction = direction.strip().lower()
+
+    requested = datetime.combine(
+        next_date,
+        approximate.time()
+    )
 
     for departure in departures:
         route = departure["route"]
@@ -218,49 +220,31 @@ def find_trip_departures():
             route.get("designation", "")
         ).strip()
 
-        departure_direction = str(
-            route.get("direction", "")
-        ).strip().lower()
-
-        # Trafiklab direction text can change along
-        # the same route.
+        # At this stage we deliberately match only the
+        # line number.
         #
-        # Example:
-        # "Bäckebol via Lindholmen"
-        # may appear simply as:
-        # "Bäckebol"
-        direction_matches = (
-            departure_direction == selected_direction
-            or departure_direction in selected_direction
-            or selected_direction in departure_direction
+        # Trafiklab's direction text may change depending
+        # on the date/time/part of the route.
+        if departure_line != selected_line:
+            continue
+
+        scheduled = datetime.fromisoformat(
+            departure["scheduled"]
         )
 
-        if (
-            departure_line == selected_line
-            and direction_matches
-        ):
-            scheduled = datetime.fromisoformat(
-                departure["scheduled"]
-            )
+        difference = abs(
+            (
+                scheduled.replace(tzinfo=None)
+                - requested
+            ).total_seconds()
+        )
 
-            requested = datetime.combine(
-                next_date,
-                approximate.time()
+        matching_departures.append(
+            (
+                difference,
+                departure
             )
-
-            difference = abs(
-                (
-                    scheduled.replace(tzinfo=None)
-                    - requested
-                ).total_seconds()
-            )
-
-            matching_departures.append(
-                (
-                    difference,
-                    departure
-                )
-            )
+        )
 
     matching_departures.sort(
         key=lambda item: item[0]
@@ -269,7 +253,7 @@ def find_trip_departures():
     closest_departures = [
         departure
         for _, departure
-        in matching_departures[:3]
+        in matching_departures[:5]
     ]
 
     return render_template(
@@ -292,9 +276,21 @@ def save_trip():
     stop_id = request.form["stop_id"]
     stop_name = request.form["stop_name"]
     line = request.form["line"]
-    direction = request.form["direction"]
 
-    target_time = request.form["target_time"]
+    # The selected radio button contains:
+    #
+    # HH:MM|||actual direction
+    #
+    # This means we save the direction returned by
+    # Trafiklab for the actual departure the user chose.
+    selected_departure = request.form[
+        "selected_departure"
+    ]
+
+    target_time, direction = selected_departure.split(
+        "|||",
+        1
+    )
 
     days = request.form.getlist("days")
 
@@ -322,6 +318,7 @@ def save_trip():
         "trip_saved.html",
         trip=saved_trip
     )
+
 
 
 @app.route("/trips")
