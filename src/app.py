@@ -215,32 +215,57 @@ def find_trip_departures():
     for departure in departures:
         route = departure["route"]
 
-        if (
-            route["designation"] == line
-            and route["direction"] == direction
-        ):
-            scheduled = datetime.fromisoformat(
-                departure["scheduled"]
-            )
+       for departure in departures:
+    route = departure["route"]
 
-            requested = datetime.combine(
-                next_date,
-                approximate.time()
-            )
+    departure_line = str(
+        route.get("designation", "")
+    ).strip()
 
-            difference = abs(
-                (
-                    scheduled.replace(tzinfo=None)
-                    - requested
-                ).total_seconds()
-            )
+    departure_direction = str(
+        route.get("direction", "")
+    ).strip().lower()
 
-            matching_departures.append(
-                (
-                    difference,
-                    departure
-                )
+    selected_direction = direction.strip().lower()
+
+    # Trafiklab direction text can change along the same route.
+    # Example:
+    # "Bäckebol via Lindholmen" -> "Bäckebol"
+    #
+    # Therefore match the line exactly, but allow compatible
+    # direction descriptions.
+    direction_matches = (
+        departure_direction == selected_direction
+        or departure_direction in selected_direction
+        or selected_direction in departure_direction
+    )
+
+    if (
+        departure_line == str(line).strip()
+        and direction_matches
+    ):
+        scheduled = datetime.fromisoformat(
+            departure["scheduled"]
+        )
+
+        requested = datetime.combine(
+            next_date,
+            approximate.time()
+        )
+
+        difference = abs(
+            (
+                scheduled.replace(tzinfo=None)
+                - requested
+            ).total_seconds()
+        )
+
+        matching_departures.append(
+            (
+                difference,
+                departure
             )
+        )
 
     matching_departures.sort(
         key=lambda item: item[0]
