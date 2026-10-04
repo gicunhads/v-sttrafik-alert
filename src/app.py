@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
 from flask import (
     Flask,
     render_template,
@@ -13,10 +14,14 @@ from flask import (
     jsonify,
     send_from_directory
 )
+
 from werkzeug.security import (
     generate_password_hash,
     check_password_hash
 )
+
+from sqlalchemy import text
+
 from database import (
     create_tables,
     insert_trip,
@@ -24,24 +29,21 @@ from database import (
     delete_trip,
     create_user,
     get_user_by_email,
-    get_user_by_id
+    get_user_by_id,
+    save_push_subscription,
+    engine
 )
+
 from functools import wraps
+
 from trafiklab import search_stop, get_departures
 from models import SavedTrip
 from monitor import check_saved_trips
-
-from database import (
-    create_tables,
-    insert_trip,
-    get_saved_trips,
-    delete_trip,
-    save_push_subscription
-)
-
 from push_notifications import send_push_to_user
 
+
 app = Flask(__name__)
+
 app.secret_key = os.getenv(
     "FLASK_SECRET_KEY"
 )
@@ -50,8 +52,6 @@ if not app.secret_key:
     raise ValueError(
         "FLASK_SECRET_KEY is missing from .env"
     )
-
-
 
 
 def login_required(view):
@@ -163,6 +163,7 @@ def new_trip():
     "/trip/find-departures",
     methods=["POST"]
 )
+@login_required
 def find_trip_departures():
 
     stop_id = request.form["stop_id"]
@@ -284,15 +285,15 @@ def save_trip():
     )
 
     saved_trip = SavedTrip(
-    user_id=session["user_id"],
-    stop_id=stop_id,
-    stop_name=stop_name,
-    line=line,
-    direction=direction,
-    target_time=target_time,
-    days=days,
-    delay_threshold=delay_threshold
-)
+        user_id=session["user_id"],
+        stop_id=stop_id,
+        stop_name=stop_name,
+        line=line,
+        direction=direction,
+        target_time=target_time,
+        days=days,
+        delay_threshold=delay_threshold
+    )
 
     insert_trip(saved_trip)
 
@@ -310,8 +311,8 @@ def save_trip():
 def trips():
 
     saved_trips = get_saved_trips(
-    session["user_id"]
-)
+        session["user_id"]
+    )
 
     return render_template(
         "trips.html",
@@ -332,8 +333,6 @@ def remove_trip(trip_id):
     )
 
     return redirect("/trips")
-
-
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -378,6 +377,7 @@ def register():
         error=error
     )
 
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
 
@@ -409,12 +409,14 @@ def login():
         error=error
     )
 
+
 @app.route("/logout")
 def logout():
 
     session.clear()
 
     return redirect("/login")
+
 
 @app.route(
     "/push/subscribe",
@@ -452,6 +454,7 @@ def subscribe_push():
         "success": True
     })
 
+
 VAPID_PUBLIC_KEY = os.getenv(
     "VAPID_PUBLIC_KEY"
 )
@@ -461,6 +464,7 @@ if not VAPID_PUBLIC_KEY:
         "VAPID_PUBLIC_KEY is missing from .env"
     )
 
+
 @app.route("/notifications")
 @login_required
 def notifications():
@@ -469,6 +473,7 @@ def notifications():
         "notifications.html",
         vapid_public_key=VAPID_PUBLIC_KEY
     )
+
 
 @app.route(
     "/push/test",
@@ -495,6 +500,7 @@ def test_push():
         "devices": successful_pushes
     })
 
+
 @app.route("/service-worker.js")
 def service_worker():
     return send_from_directory(
@@ -502,6 +508,8 @@ def service_worker():
         "service-worker.js",
         mimetype="application/javascript"
     )
+
+
 @app.route("/manifest.json")
 def manifest():
     return send_from_directory(
@@ -513,9 +521,44 @@ def manifest():
 
 @app.route("/google20ad24287c916cbb.html")
 def google_site_verification():
-    return app.send_static_file("google20ad24287c916cbb.html")
+    return app.send_static_file(
+        "google20ad24287c916cbb.html"
+    )
+
+
+# TEMPORARY DATABASE DIAGNOSTIC.
+# Remove this route after the database issue is solved.
+@app.route("/debug/database")
+@login_required
+def debug_database():
+
+    with engine.connect() as connection:
+
+        trip_count = connection.execute(
+            text(
+                "SELECT COUNT(*) "
+                "FROM saved_trips"
+            )
+        ).scalar_one()
+
+        if engine.dialect.name == "postgresql":
+            database_name = connection.execute(
+                text("SELECT current_database()")
+            ).scalar_one()
+        else:
+            database_name = "SQLite"
+
+    return jsonify({
+        "database_type": engine.dialect.name,
+        "database_name": database_name,
+        "database_host": engine.url.host or "local",
+        "saved_trip_count": trip_count
+    })
+
 
 create_tables()
+
+
 if __name__ == "__main__":
 
     app.run(
